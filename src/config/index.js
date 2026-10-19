@@ -5,7 +5,10 @@ dotenv.config();
 export const config = {
   transport: process.env.MCP_TRANSPORT || "http",
   port: process.env.PORT || 3000,
-  mcpApiKey: process.env.MCP_API_KEY || "",
+  // Ключи доступа: MCP_API_KEYS="ключ1,ключ2" (перманентный список) или
+  // одиночный MCP_API_KEY. Пусто — авторизация выключена.
+  mcpApiKeys: (process.env.MCP_API_KEYS || process.env.MCP_API_KEY || "")
+    .split(",").map(s => s.trim()).filter(Boolean),
   polygonRpcUrl: process.env.POLYGON_RPC_URL || "https://rpc-amoy.polygon.technology",
   contracts: {
     sbt: process.env.NDP_SBT_CONTRACT || "",

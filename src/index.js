@@ -140,10 +140,11 @@ app.use(cors());
 // X-NDP-Token: <key> — для гейтвеев маркетплейсов (Smithery резервирует
 // заголовок Authorization за собственной авторизацией клиента).
 const authMiddleware = (req, res, next) => {
-  if (!config.mcpApiKey) return next();
+  if (config.mcpApiKeys.length === 0) return next();
   const authHeader = req.headers.authorization;
   const altHeader = req.headers["x-ndp-token"];
-  const ok = authHeader === `Bearer ${config.mcpApiKey}` || altHeader === config.mcpApiKey;
+  const ok = config.mcpApiKeys.includes(altHeader)
+    || config.mcpApiKeys.some(k => authHeader === `Bearer ${k}`);
   if (!ok) {
     console.warn("🚫 Unauthorized access attempt");
     return res.status(401).json({ error: "Unauthorized" });
