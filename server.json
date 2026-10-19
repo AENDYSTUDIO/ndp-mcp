@@ -7,7 +7,7 @@
     "url": "https://github.com/AENDYSTUDIO/ndp-mcp",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "remotes": [
     {
       "type": "sse",
@@ -20,6 +20,16 @@
           "isSecret": true
         }
       ]
+    }
+  ],
+  "packages": [
+    {
+      "identifier": "@aendykachess/ndp-mcp",
+      "version": "1.0.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "registryType": "npm"
     }
   ]
 }

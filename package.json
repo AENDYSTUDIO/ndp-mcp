@@ -1,7 +1,7 @@
 {
-  "name": "ndp-mcp-server",
-  "version": "0.1.0",
-  "description": "NormalDance Protocol MCP Server - AI interface for artist passport and track registry",
+  "name": "@aendykachess/ndp-mcp",
+  "version": "1.0.1",
+  "description": "NDP MCP Server — AI tools for music rights: track identification by fingerprint (ADNA), rights manifests, artist verification.",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -12,9 +12,12 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "blockchain",
     "music",
-    "artist-passport"
+    "copyright",
+    "audio-fingerprint",
+    "royalties",
+    "identification",
+    "ai-agents"
   ],
   "author": "NormalDance Protocol",
   "license": "MIT",
@@ -27,5 +30,27 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
-  }
+  },
+  "bin": {
+    "ndp-mcp": "bin/ndp-mcp.js"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "server.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AENDYSTUDIO/ndp-mcp.git"
+  },
+  "homepage": "https://normaldance.ru/docs/",
+  "bugs": {
+    "url": "https://github.com/AENDYSTUDIO/ndp-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "mcpName": "io.github.AENDYSTUDIO/ndp"
 }

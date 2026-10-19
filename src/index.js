@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import cors from "cors";
@@ -18,7 +19,7 @@ import { registryGet } from "./services/registry.js";
 // первого) — см. ниже Map по sessionId.
 const createServer = () => {
   const server = new Server(
-    { name: "ndp-mcp-server", version: "0.2.0" },
+    { name: "ndp", version: "1.0.0" },
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
   );
 
@@ -184,6 +185,16 @@ app.post("/http/messages", authMiddleware, async (req, res) => {
 });
 
 async function main() {
+  // stdio-режим (npm-пакет: npx ndp-mcp / MCP_TRANSPORT=stdio):
+  // stdout занят протоколом — все логи уводим в stderr.
+  if (config.transport === "stdio") {
+    console.log = console.error;
+    console.warn = console.error;
+    const server = createServer();
+    await server.connect(new StdioServerTransport());
+    console.error(`🚀 NDP MCP Server (stdio) · tools: ${TOOLS.length}`);
+    return;
+  }
   app.listen(config.port, () => {
     console.log(`🚀 NDP MCP Server listening on port ${config.port}`);
     console.log(`🔗 Endpoint: http://localhost:${config.port}/http`);

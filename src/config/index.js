@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const config = {
+  transport: process.env.MCP_TRANSPORT || "http",
   port: process.env.PORT || 3000,
   mcpApiKey: process.env.MCP_API_KEY || "",
   polygonRpcUrl: process.env.POLYGON_RPC_URL || "https://rpc-amoy.polygon.technology",
