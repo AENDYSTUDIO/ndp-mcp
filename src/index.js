@@ -134,11 +134,16 @@ app.use(cors());
 // ВНИМАНИЕ: без express.json() — SSEServerTransport читает сырой поток тела
 // через raw-body; JSON-middleware вычитывает поток раньше и POST падает с 400.
 
-// Middleware для проверки токена (MCP_API_KEY)
+// Middleware для проверки токена (MCP_API_KEY).
+// Два канала: Authorization: Bearer <key> (прямые клиенты) и
+// X-NDP-Token: <key> — для гейтвеев маркетплейсов (Smithery резервирует
+// заголовок Authorization за собственной авторизацией клиента).
 const authMiddleware = (req, res, next) => {
   if (!config.mcpApiKey) return next();
   const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== `Bearer ${config.mcpApiKey}`) {
+  const altHeader = req.headers["x-ndp-token"];
+  const ok = authHeader === `Bearer ${config.mcpApiKey}` || altHeader === config.mcpApiKey;
+  if (!ok) {
     console.warn("🚫 Unauthorized access attempt");
     return res.status(401).json({ error: "Unauthorized" });
   }
