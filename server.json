@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.AENDYSTUDIO/ndp",
+  "title": "NDP — Music Rights & Track Identification",
+  "description": "Music rights for AI: track identification by fingerprint, rights manifests, artist verification.",
+  "repository": {
+    "url": "https://github.com/AENDYSTUDIO/ndp-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://mcp.normaldance.ru/http",
+      "headers": [
+        {
+          "name": "X-NDP-Token",
+          "description": "NDP API key — get yours free via Telegram @NORMALDANCE (https://t.me/NORMALDANCE)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
