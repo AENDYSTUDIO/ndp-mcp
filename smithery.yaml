@@ -1,0 +1,31 @@
+# Smithery registry config: https://smithery.ai/docs/config
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      registryUrl:
+        type: string
+        title: NDP Registry URL
+        default: https://mcp.normaldance.ru
+        description: Base URL of the NDP Stage 0 registry
+      registryToken:
+        type: string
+        title: NDP Bearer token
+        description: Ask @NORMALDANCE on Telegram for an API key (read tools work anonymously where allowed)
+      oracleUrl:
+        type: string
+        title: ADNA Oracle URL
+        default: https://mcp.normaldance.ru
+    required: [registryToken]
+  commandFunction: |-
+    (config) => ({
+      command: 'node',
+      args: ['src/index.js'],
+      env: {
+        REGISTRY_URL: config.registryUrl,
+        REGISTRY_TOKEN: config.registryToken,
+        ORACLE_URL: config.oracleUrl,
+        MCP_TRANSPORT: 'stdio'
+      }
+    })

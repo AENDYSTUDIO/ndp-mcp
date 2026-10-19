@@ -1,0 +1,31 @@
+{
+  "name": "ndp-mcp-server",
+  "version": "0.1.0",
+  "description": "NormalDance Protocol MCP Server - AI interface for artist passport and track registry",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "node test-mcp.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "blockchain",
+    "music",
+    "artist-passport"
+  ],
+  "author": "NormalDance Protocol",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.11.0",
+    "express": "^4.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

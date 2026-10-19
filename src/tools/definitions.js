@@ -1,0 +1,253 @@
+export const TOOLS = [
+  {
+    name: "verify_artist",
+    description: "Verify an artist: search by name in the Stage 0 registry (tracks, rights) or by wallet address on instances with a blockchain layer",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artist_name: { type: "string", description: "Artist's stage name (primary method — Stage 0 registry, case-insensitive)" },
+        wallet_address: { type: "string", description: "Ethereum wallet address (0x...) — only for instances with a blockchain layer" }
+      }
+    }
+  },
+  {
+    name: "get_artist_passport",
+    description: "Fetch the full artist passport record",
+    inputSchema: {
+      type: "object",
+      properties: {
+        wallet_address: { type: "string", description: "Artist's wallet address" },
+        token_id: { type: "number", description: "SBT token ID" }
+      }
+    }
+  },
+  {
+    name: "check_track_ownership",
+    description: "Check track ownership by ISRC",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "Track ISRC (e.g. US-NDP-26-00001)" }
+      },
+      required: ["isrc"]
+    }
+  },
+  {
+    name: "get_royalty_balance",
+    description: "Check the royalty balance for a track",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "Track ISRC" }
+      },
+      required: ["isrc"]
+    }
+  },
+  {
+    name: "get_label_info",
+    description: "Fetch label information",
+    inputSchema: {
+      type: "object",
+      properties: {
+        label_wallet: { type: "string", description: "Label wallet address" }
+      },
+      required: ["label_wallet"]
+    }
+  },
+  {
+    name: "get_system_stats",
+    description: "Fetch overall NDP system statistics",
+    inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "check_artist_tracks",
+    description: "Fetch the number of tracks by an artist",
+    inputSchema: {
+      type: "object",
+      properties: {
+        wallet_address: { type: "string", description: "Artist's wallet address" }
+      },
+      required: ["wallet_address"]
+    }
+  },
+  {
+    name: "start_ucp_checkout",
+    description: "Start a track purchase via NDP Checkout (UCP-compatible)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "Track ISRC to purchase" },
+        currency: { type: "string", description: "Payment currency (MATIC, USDC)", default: "MATIC" }
+      },
+      required: ["isrc"]
+    }
+  },
+  {
+    name: "trigger_n8n_workflow",
+    description: "Trigger an n8n workflow (e.g. passport minting or verification)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action (e.g. 'mint_pass', 'verify_track', 'test')" },
+        payload: { type: "object", description: "Additional workflow data" }
+      },
+      required: ["action"]
+    }
+  },
+  {
+    name: "identify_track",
+    description: "Identify a track by its ADNA fingerprint (anti-plagiarism; verdict same/derivative/different) or fetch track data by ISRC from the Stage 0 registry. v2 (adna_v2) adds localization: offset_sec, coverage, attribution map for multi-sample tracks",
+    inputSchema: {
+      type: "object",
+      properties: {
+        adna: { type: "string", description: "ADNA v1 fingerprint (base64, 256 bytes ≈ 344 chars) — run through the oracle" },
+        adna_v2: { type: "string", description: "ADNA v2 fingerprint (base64, starts with QTI; windowed signatures, ~KB scale) — aligned identification: finds fragments, cut-offs, pitch ±8%" },
+        isrc: { type: "string", description: "Track ISRC — registry data lookup" }
+      }
+    }
+  },
+  {
+    name: "register_track",
+    description: "Register a track in the Stage 0 registry (registry-api + oracle, dual write): ISRC, ADNA, splits, optional derivative link (parent_isrc)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "ISRC (e.g. RU-NDP-26-00001)" },
+        title: { type: "string", description: "Track title" },
+        artist_name: { type: "string", description: "Artist name (for the oracle record)" },
+        adna: { type: "string", description: "ADNA v1 fingerprint (base64, 256 bytes)" },
+        adna_v2: { type: "string", description: "ADNA v2 fingerprint (base64, starts with QTI) — optional, mirrored to the oracle for aligned identification" },
+        sha256: { type: "string", description: "SHA-256 of the reference audio file (optional)" },
+        parent_isrc: { type: "string", description: "ISRC of the source track if this is a derivative (remix/sample)" },
+        ndt: { type: "object", description: "Full NDT manifest (optional)" },
+        splits: {
+          type: "array",
+          description: "Royalty shares, Σ=100; cascade: {role:'parent', wallet:'isrc:<ISRC>', share:N}",
+          items: {
+            type: "object",
+            properties: {
+              role: { type: "string" },
+              wallet: { type: "string" },
+              share: { type: "number" }
+            },
+            required: ["role", "wallet", "share"]
+          }
+        }
+      },
+      required: ["isrc", "title", "adna", "splits"]
+    }
+  },
+  {
+    name: "get_track_manifest",
+    description: "Fetch a track's NDT manifest (rights, splits, sonic-dna) from the Stage 0 registry",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "Track ISRC" }
+      },
+      required: ["isrc"]
+    }
+  },
+  {
+    name: "audience_superfans",
+    description: "SPEC §7.7 fan agent: an artist's superfans derived from protocol receipts (who listens / rewinds / pays). Requires an agent token issued by the artist via POST /subjects/{ndp_id}/scopes/issue (mandate with the read_audience scope)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_token: { type: "string", description: "Agent JWT from scopes/issue (with the read_audience scope)" },
+        limit: { type: "number", description: "How many listeners to return (1–100, default 20)" }
+      },
+      required: ["agent_token"]
+    }
+  },
+  {
+    name: "audience_summary",
+    description: "SPEC §7.7 fan agent: artist audience summary from receipts — listeners, events, rewinds, total paid, active in the last 30 days. Requires an agent token with the read_audience scope",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_token: { type: "string", description: "Agent JWT from scopes/issue" }
+      },
+      required: ["agent_token"]
+    }
+  },
+  {
+    name: "subject_mint",
+    description: "SPEC §1: mint an NDP passport (Proof of Humanity). Three verification paths: label / indie_kyc / community. Returns ndp_id, status, quarantine flag",
+    inputSchema: {
+      type: "object",
+      properties: {
+        verification_path: { type: "string", enum: ["label", "indie_kyc", "community"], description: "Verification path" },
+        identity_commitment: { type: "string", description: "SHA-256 hash of a unique ID (64 hex chars)" },
+        initial_device_key: { type: "string", description: "Device public key (hex, 33/65 bytes)" },
+        authorization: { type: "string", description: "Artist Bearer token" }
+      },
+      required: ["verification_path", "identity_commitment", "initial_device_key", "authorization"]
+    }
+  },
+  {
+    name: "subject_status",
+    description: "SPEC §1: public check of an NDP passport by ndp_id — status, verification path, validity",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ndp_id: { type: "string", description: "NDP passport UUID" }
+      },
+      required: ["ndp_id"]
+    }
+  },
+  {
+    name: "subject_keys",
+    description: "SPEC §1: manage a subject's device keys — list keys",
+    inputSchema: {
+      type: "object",
+      properties: {
+        authorization: { type: "string", description: "Artist Bearer token" },
+        ndp_id: { type: "string", description: "NDP passport UUID" }
+      },
+      required: ["authorization", "ndp_id"]
+    }
+  },
+  {
+    name: "receipt_batch",
+    description: "SPEC §7.1: batch submission of signed play receipts. Body — an array of objects {receipt_id, seq, ndp_id, device_key, isrc, action, occurred_at, signature}",
+    inputSchema: {
+      type: "object",
+      properties: {
+        receipts: {
+          type: "array",
+          description: "Array of receipts",
+          items: { type: "object" }
+        }
+      },
+      required: ["receipts"]
+    }
+  },
+  {
+    name: "stats_journal",
+    description: "Daily event journal (play/rewind/purchase, totals, chart) from the unified receipt journal",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "Period in days (1–365, default 30)" }
+      }
+    }
+  },
+  {
+    name: "opt_in",
+    description: "SPEC §7.7: toggle a listener's opt-in for audience segmentation (privacy-first: hidden by default)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean", description: "true — visible, false — hidden" },
+        authorization: { type: "string", description: "Listener Bearer token (passport owner)" }
+      },
+      required: ["enabled", "authorization"]
+    }
+  },
+  {
+    name: "snapshot_epoch",
+    description: "SPEC §1: current epoch snapshot of subject statuses (signed with SNAPSHOT_SIGNING_KEY)",
+    inputSchema: { type: "object", properties: {} }
+  }
+];
