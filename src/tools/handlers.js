@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { contracts, chainEnabled, statusMap } from "../services/blockchain.js";
 import { triggerN8nWorkflow } from "../services/n8n.js";
 import { registryGet, registryPost, oraclePost } from "../services/registry.js";
+import { verifyMerkleProof } from "../services/merkle.js";
 
 // Chain-слой эпохи Polygon отключён (нет NDP_*_CONTRACT/POLYGON_RPC_URL в env).
 const CHAIN_OFF_TEXT = "⛓️ Blockchain-слой NDP отключён на этом инстансе (адреса контрактов Polygon не заданы). Данные реестра Стадии 0 доступны через: get_track_manifest, identify_track, register_track, audience-инструменты.";
@@ -349,6 +350,23 @@ export async function handleGetTrackManifest(args) {
     }
     let manifest = track.ndt;
     try { manifest = JSON.parse(track.ndt); } catch { /* уже строка */ }
+    // Компакт по умолчанию (token economy): манифест — самый тяжёлый дамп;
+    // полный JSON — по verbose=true.
+    if (!args.verbose && typeof manifest === "object") {
+      const splitsLine = (track.splits || [])
+        .map(s => `${s.role}/${s.wallet} ${s.share}%`).join(", ");
+      return {
+        content: [{
+          type: "text",
+          text: `📄 NDT-МАНИФЕСТ ${args.isrc} (компакт)\n\n` +
+            `«${track.title}» — ${track.artist?.name || "?"}\n` +
+            `стандарт: ${manifest.ndt_standard || "?"} (v${manifest.ndt_version || "?"})\n` +
+            `разделы: ${Object.keys(manifest).join(", ")}\n` +
+            `сплиты: ${splitsLine || "—"}\n\n` +
+            `Полный JSON: повторите с verbose=true.`
+        }]
+      };
+    }
     return {
       content: [{
         type: "text",
@@ -381,7 +399,7 @@ export async function handleAudienceSuperfans(args) {
     }
     const rows = data.items.map((s, i) => {
       const medal = ["🥇", "🥈", "🥉"][i] || `${i + 1}.`;
-      return `${medal} ${s.ndp_id}\n     прослушиваний: ${s.plays} | rewind'ов: ${s.rewinds} | поддержал: ${(s.amount_kopecks / 100).toFixed(2)} ₽ | дней: ${s.active_days} | был: ${s.last_seen}`;
+      return `${medal} ${s.ndp_id}\n     прослушиваний: ${s.plays} | rewind'ов: ${s.rewinds} | поддержал: ${(s.amount_kopecks / 100).toFixed(2)} ₽ | дней: ${s.active_days} | был: ${s.last_seen} | уровень: ${s.tier_name}`;
     });
     return {
       content: [{
@@ -412,6 +430,58 @@ export async function handleAudienceSummary(args) {
     };
   } catch (error) {
     return { content: [{ type: "text", text: `❌ Аудитория недоступна: ${error.message}` }] };
+  }
+}
+
+// ---------------- §7.30: статус-уровень слушателя (Guest..Master) -----------
+// С authorization (JWT владельца паспорта) — полный разбор /subjects/me/tier;
+// по ndp_id — публичный уровень (строго при audience_opt_in, §7.7).
+
+export async function handleListenerTier(args) {
+  try {
+    if (args.authorization) {
+      const t = await registryGet("/subjects/me/tier", args.authorization);
+      const next = t.next
+        ? `до ${t.next.tier_name}: ${Math.round((t.next.progress || 0) * 100)}% (ещё ${t.next.xp_remaining} XP)`
+        : "максимальный уровень 🏆";
+      const ach = (t.achievements || [])
+        .map(a => `${a.achieved ? "✅" : "▫️"} ${a.name}`)
+        .join(" | ");
+      const pk = t.perks || {};
+      const perkBits = [];
+      if (pk.quota_bonus_plays) perkBits.push(`+${pk.quota_bonus_plays} плей/день`);
+      if (pk.topup_bonus_pct) perkBits.push(`+${pk.topup_bonus_pct}% к пополнению`);
+      const perkLine = perkBits.length ? `\nПривилегии: ${perkBits.join(" · ")} (§7.30 v2)\n` : "\n";
+      return {
+        content: [{
+          type: "text",
+          text: `🏅 УРОВЕНЬ СЛУШАТЕЛЯ\n\n` +
+            `${t.tier_name} (${t.tier} из 5)\n` +
+            `XP: ${t.xp}\n` +
+            `${next}\n` +
+            perkLine +
+            `прослушиваний: ${t.stats?.plays} | rewind'ов: ${t.stats?.rewinds} | покупок: ${t.stats?.purchases}\n` +
+            `активных дней: ${t.stats?.active_days} | разных артистов: ${t.stats?.distinct_artists}\n` +
+            `поддержал: ${((t.stats?.amount_kopecks || 0) / 100).toFixed(2)} ₽\n\n` +
+            `Достижения: ${ach}`
+        }]
+      };
+    }
+    if (!args.ndp_id) {
+      return { content: [{ type: "text", text: "⚠️ Нужен ndp_id (публичный уровень) или authorization владельца паспорта (полный разбор)" }] };
+    }
+    const r = await registryGet(`/subjects/${args.ndp_id}`);
+    const tier = r.tier_name !== undefined
+      ? `${r.tier_name} (уровень ${r.tier})`
+      : "скрыт — слушатель не включал видимость в аудитории (§7.7)";
+    return {
+      content: [{
+        type: "text",
+        text: `🏅 УРОВЕНЬ СЛУШАТЕЛЯ ${args.ndp_id}\n\n${tier}`
+      }]
+    };
+  } catch (error) {
+    return { content: [{ type: "text", text: `❌ Уровень: ${error.message}` }] };
   }
 }
 
@@ -446,6 +516,8 @@ export async function handleSubjectMint(args) {
 export async function handleSubjectStatus(args) {
   try {
     const r = await registryGet(`/subjects/${args.ndp_id}`);
+    const tierLine = r.tier_name
+      ? `уровень слушателя: ${r.tier_name} (§7.30)\n` : "";
     return {
       content: [{
         type: "text",
@@ -453,6 +525,7 @@ export async function handleSubjectStatus(args) {
           `valid: ${r.valid ? "✅ да" : "⛔ нет"}\n` +
           `статус: ${r.status}\n` +
           `путь: ${r.verification_path}\n` +
+          tierLine +
           `создан: ${r.created_at}`
       }]
     };
@@ -530,7 +603,7 @@ export async function handleOptIn(args) {
   }
 }
 
-export async function handleSnapshotEpoch(args) {
+export async function handleSnapshotEpoch() {
   try {
     const r = await registryGet("/subjects/snapshot");
     return {
@@ -546,5 +619,115 @@ export async function handleSnapshotEpoch(args) {
     };
   } catch (error) {
     return { content: [{ type: "text", text: `❌ Снапшот: ${error.message}` }] };
+  }
+}
+
+// ---------------- A7 (§7.27): якорный контур Fabric + Merkle ---------------
+// Компактный вывод по умолчанию (token economy): только ключевые поля;
+// полный JSON — по verbose=true. Данные — публичные якорные эндпоинты
+// реестра (/subjects/snapshot/anchor, /epochs/{epoch}/proof), проверка
+// proof — офлайн зеркалом chaincode (src/services/merkle.js), без доверия к БД.
+
+export async function handleGetEpochAnchor(args) {
+  try {
+    const q = args.epoch ? `?epoch=${Number(args.epoch)}` : "";
+    const a = await registryGet(`/subjects/snapshot/anchor${q}`);
+    // Цепочка эпох: предыдущая строка — её root и якорь (для превью prev-hash)
+    let prev = null;
+    if (a.epoch > 1) {
+      try {
+        const p = await registryGet(`/subjects/snapshot/anchor?epoch=${a.epoch - 1}`);
+        prev = { epoch: p.epoch, root_hash: p.root_hash,
+                 anchored: p.anchored, tx_id: p.tx_id };
+      } catch { /* строки нет (например, ручной epoch) — не критично */ }
+    }
+    if (args.verbose) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ anchor: a, prev_epoch: prev }, null, 2)
+        }]
+      };
+    }
+    const anchorLine = a.anchored
+      ? `состояние: заякорена ✅  (${a.network || "?"} / ${a.channel || "?"})\nTxID: ${a.tx_id}\nзаякорена: ${a.anchored_at}`
+      : `состояние: ⏳ ещё не заякорена (anchord догонит на следующем проходе)`;
+    return {
+      content: [{
+        type: "text",
+        text: `⚓ ЭПОХА ${a.epoch} (A7, §7.27)\n\n` +
+          `${anchorLine}\n\n` +
+          `Merkle-корень треков: ${a.merkle_root_tracks?.slice(0, 20) || "—"}… (${a.track_count} треков)\n` +
+          `субъектный root: ${a.root_hash?.slice(0, 20)}…\n` +
+          (prev
+            ? `предыдущая эпоха ${prev.epoch}: root ${prev.root_hash?.slice(0, 12)}…, ${prev.anchored ? `заякорена ✅ (${(prev.tx_id || "").slice(0, 16)}…)` : "не заякорена"}`
+            : "предыдущей эпохи нет (первая)") +
+          `\n\nДоказательство по треку: verify_track_proof(isrc). Полный JSON: verbose=true.`
+      }]
+    };
+  } catch (error) {
+    return { content: [{ type: "text", text: `❌ Якорный статус: ${error.message}` }] };
+  }
+}
+
+export async function handleVerifyTrackProof(args) {
+  try {
+    if (!args.isrc) {
+      return { content: [{ type: "text", text: "⚠️ Укажите isrc — ISRC трека (эпоха опциональна, по умолчанию последняя)" }] };
+    }
+    const aq = args.epoch ? `?epoch=${Number(args.epoch)}` : "";
+    const a = await registryGet(`/subjects/snapshot/anchor${aq}`);
+    let p;
+    try {
+      p = await registryGet(`/epochs/${a.epoch}/proof?isrc=${encodeURIComponent(args.isrc)}`);
+    } catch (e) {
+      return {
+        content: [{
+          type: "text",
+          text: `⚠️ Трек ${args.isrc} не входит в эпоху ${a.epoch} — не был зарегистрирован на момент ротации эпохи (или ISRC опечатан). ${e.message}`
+        }]
+      };
+    }
+    // Сквозная проверка: leaf→root офлайн (зеркало VerifyInclusion) +
+    // корень proof-эндпоинта == корню якорной строки той же эпохи.
+    const merkleVerified = verifyMerkleProof(p.leaf, p.proof, p.merkle_root)
+      && p.merkle_root === a.merkle_root_tracks;
+    if (args.verbose) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            isrc: p.isrc, epoch: p.epoch, merkle_root: p.merkle_root,
+            leaf: p.leaf, proof: p.proof,
+            merkle_verified: merkleVerified,
+            anchored: a.anchored, tx_id: a.tx_id,
+            network: a.network, channel: a.channel, anchored_at: a.anchored_at,
+          }, null, 2)
+        }]
+      };
+    }
+    if (!merkleVerified) {
+      return {
+        content: [{
+          type: "text",
+          text: `⛔ ДОКАЗАТЕЛЬСТВО НЕ СОШЛОСЬ для ${args.isrc} (эпоха ${a.epoch}): leaf→root не верифицируется или корень расходится с якорной строкой. Требуется аудит.`
+        }]
+      };
+    }
+    const anchorBit = a.anchored
+      ? `Якорь HLF: ✅ TxID ${a.tx_id} (${a.network || "?"} / ${a.channel || "?"})\n\n→ Трек задепонирован и криптографически закреплён в HLF.`
+      : `Якорь HLF: ⏳ эпоха ещё не заякорена — доказательство математически верно, on-chain фиксация ожидает anchord.`;
+    return {
+      content: [{
+        type: "text",
+        text: `🔐 ДОКАЗАТЕЛЬСТВО ВКЛЮЧЕНИЯ (A7, §7.27)\n\n` +
+          `ISRC: ${p.isrc}\nэпоха: ${p.epoch}\n` +
+          `Merkle-проверка: ✅ leaf→root сходится (${p.proof.length} шагов, SHA-256 — зеркало VerifyInclusion)\n` +
+          anchorBit +
+          `\n\nПолный proof-путь: verbose=true.`
+      }]
+    };
+  } catch (error) {
+    return { content: [{ type: "text", text: `❌ Доказательство: ${error.message}` }] };
   }
 }

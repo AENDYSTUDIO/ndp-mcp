@@ -19,7 +19,7 @@ import { registryGet } from "./services/registry.js";
 // первого) — см. ниже Map по sessionId.
 const createServer = () => {
   const server = new Server(
-    { name: "ndp", version: "1.0.0" },
+    { name: "ndp", version: "1.2.0" },
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
   );
 
@@ -38,6 +38,7 @@ const createServer = () => {
     get_track_manifest: handlers.handleGetTrackManifest,
     audience_superfans: handlers.handleAudienceSuperfans,
     audience_summary: handlers.handleAudienceSummary,
+    listener_tier: handlers.handleListenerTier,
     subject_mint: handlers.handleSubjectMint,
     subject_status: handlers.handleSubjectStatus,
     subject_keys: handlers.handleSubjectKeys,
@@ -45,9 +46,8 @@ const createServer = () => {
     stats_journal: handlers.handleStatsJournal,
     opt_in: handlers.handleOptIn,
     snapshot_epoch: handlers.handleSnapshotEpoch,
-    verify_subject: handlers.handleVerifySubject,
-    analyze_provenance: handlers.handleAnalyzeProvenance,
-    compute_adna_distance: handlers.handleComputeAdnaDistance
+    get_epoch_anchor: handlers.handleGetEpochAnchor,
+    verify_track_proof: handlers.handleVerifyTrackProof
   };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
@@ -61,13 +61,15 @@ const createServer = () => {
 
   // Ресурсы реестра Стадии 0 (ndp://…). Динамические URI
   // (ndp://registry/tracks/{isrc}, ndp://registry/artists/{id}) читаются
-  // тем же обработчиком — в list заявлены корневые.
+  // тем же обработчиком — в list заявлены корневые. A7 (§7.27): якорный
+  // статус эпохи, NDT-манифест трека и сплиты артиста.
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: [
       { uri: "ndp://registry/tracks", name: "Реестр треков (листинг)", mimeType: "application/json" },
       { uri: "ndp://registry/artists", name: "Артисты реестра", mimeType: "application/json" },
       { uri: "ndp://subjects", name: "Субъекты §1 (PoH-паспорта)", mimeType: "application/json" },
       { uri: "ndp://epochs/latest", name: "Epoch-снапшот (последний)", mimeType: "application/json" },
+      { uri: "ndp://epochs/latest/anchor", name: "Якорь эпохи в HLF (A7 §7.27): tx_id, Merkle-корень", mimeType: "application/json" },
       { uri: "ndp://epochs/latest/revocations", name: "Отозванные ключи", mimeType: "application/json" }
     ]
   }));
@@ -77,12 +79,21 @@ const createServer = () => {
     let data;
     if (uri === "ndp://registry/tracks") {
       data = await registryGet("/tracks?limit=200");
+    } else if (uri.startsWith("ndp://registry/tracks/") && uri.endsWith("/manifest")) {
+      // NDT-манифест трека: {isrc, title, ndt} без остального тела /tracks
+      const isrc = uri.slice("ndp://registry/tracks/".length, -"/manifest".length);
+      const track = await registryGet(`/tracks/${encodeURIComponent(isrc)}`);
+      let ndt = track.ndt || null;
+      if (ndt) { try { ndt = JSON.parse(ndt); } catch { /* уже объект/строка */ } }
+      data = { isrc: track.isrc, title: track.title, artist: track.artist?.name, ndt };
     } else if (uri.startsWith("ndp://registry/tracks/")) {
       data = await registryGet(`/tracks/${encodeURIComponent(uri.slice("ndp://registry/tracks/".length))}`);
     } else if (uri === "ndp://subjects") {
       data = await registryGet("/stats");
     } else if (uri === "ndp://epochs/latest") {
       data = await registryGet("/subjects/snapshot");
+    } else if (uri === "ndp://epochs/latest/anchor") {
+      data = await registryGet("/subjects/snapshot/anchor");
     } else if (uri === "ndp://epochs/latest/revocations") {
       const snap = await registryGet("/subjects/snapshot");
       const revoked = (snap.entries || [])
@@ -90,6 +101,19 @@ const createServer = () => {
       data = { epoch: snap.epoch, revoked_keys: revoked };
     } else if (uri.startsWith("ndp://subjects/")) {
       data = await registryGet(`/subjects/${encodeURIComponent(uri.slice("ndp://subjects/".length))}`);
+    } else if (uri.startsWith("ndp://registry/artists/") && uri.endsWith("/splits")) {
+      // Публичный профиль прав артиста: сплиты всех его треков
+      const id = uri.slice("ndp://registry/artists/".length, -"/splits".length);
+      const artist = await registryGet(`/artists/${encodeURIComponent(id)}`);
+      const tracks = await registryGet(`/tracks?artist=${encodeURIComponent(artist.name)}`);
+      data = {
+        artist: { id: artist.id, name: artist.name, isni: artist.isni, passport_addr: artist.passport_addr },
+        tracks: (tracks.items || []).map(t => ({
+          isrc: t.isrc, title: t.title,
+          parent_isrc: t.parent_isrc || null,
+          splits: t.splits || [],
+        })),
+      };
     } else if (uri.startsWith("ndp://registry/artists/")) {
       data = await registryGet(`/artists/${uri.slice("ndp://registry/artists/".length)}`);
     } else {
@@ -98,16 +122,30 @@ const createServer = () => {
     return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(data, null, 2) }] };
   });
 
-  // MCP Prompts: §7.18 аудит сцены
+  // MCP Prompts: §7.18 аудит сцены; A7 — лицензионный аудит (криптодоказательства
+  // якоря) и генерация сплит-листа NDT.
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-    prompts: [{
-      name: "audit_scene",
-      description: "§7.18: Расследование «Парадокса Сцены» — разделить органическую корреляцию от скоординированной атаки",
-      arguments: [{ name: "scene_id", description: "ID сцены или жанра", required: false }]
-    }]
+    prompts: [
+      {
+        name: "audit_scene",
+        description: "§7.18: Расследование «Парадокса Сцены» — разделить органическую корреляцию от скоординированной атаки",
+        arguments: [{ name: "scene_id", description: "ID сцены или жанра", required: false }]
+      },
+      {
+        name: "audit_license",
+        description: "Аудит чистоты прав на трек перед использованием (видео/подкаст/сборник): манифест, сплиты, криптографический якорь HLF, производные",
+        arguments: [{ name: "isrc", description: "ISRC проверяемого трека", required: true }]
+      },
+      {
+        name: "generate_split_sheet",
+        description: "Помощь артисту в составлении корректного сплит-листа NDT (Σ=100) с ролями и каскадными долями для сэмплов/ремиксов",
+        arguments: [{ name: "track_description", description: "Кто участвовал в создании трека и в каких ролях", required: false }]
+      }
+    ]
   }));
 
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const isrc = request.params.arguments?.isrc || "{ISRC}";
     if (request.params.name === "audit_scene") {
       return {
         description: "Аудит сцены §7.18",
@@ -116,6 +154,38 @@ const createServer = () => {
           content: {
             type: "text",
             text: "Ты — аудитор сцены NDP. Проанализируй события по журналам (stats_journal) и квитанциям (receipt_batch). Раздели органическую корреляцию (плотная сцена §7.18) от скоординированной атаки. Аномалия — повод для аудита, не приговор. Для сжигания стейка нужно доказательство переноса капитала, не паттерн."
+          }
+        }]
+      };
+    }
+    if (request.params.name === "audit_license") {
+      return {
+        description: `Лицензионный аудит ${isrc}`,
+        messages: [{
+          role: "user",
+          content: {
+            type: "text",
+            text: `Ты — лицензионный аудитор NDP. Проверь трек ${isrc} перед использованием в видео/подкасте/сборнике:\n` +
+              `1) get_track_manifest(isrc="${isrc}") — права, сплиты (Σ=100), условия лицензии;\n` +
+              `2) verify_track_proof(isrc="${isrc}") — криптографическое закрепление в HLF (A7 §7.27): Merkle-доказательство + TxID якоря;\n` +
+              `3) при производном треке (parent_isrc) — рекурсивно проверь исходный трек и каскадные доли.\n` +
+              `Вердикт: можно ли использовать, на каких условиях, чьё согласие нужно. Если трек не в реестре или доказательство не сходится — прямо скажи об этом и предложи путь депонирования.`
+          }
+        }]
+      };
+    }
+    if (request.params.name === "generate_split_sheet") {
+      return {
+        description: "Сплит-лист NDT (Σ=100)",
+        messages: [{
+          role: "user",
+          content: {
+            type: "text",
+            text: `Ты — ассистент NDP. Помоги составить корректный сплит-лист для манифеста NDT:\n` +
+              `1) собери всех соавторов с ролями (author/composer/lyricist/performer/producer/publisher…), доля каждого в процентах, Σ строго = 100;\n` +
+              `2) если использован сэмпл/ремикс — добавь каскадную строку {role:'parent', wallet:'isrc:<ISRC-исходника>', share:N}, проверь исходник через get_track_manifest;\n` +
+              `3) сверься со схемой schemas/ndt-manifest.schema.json (wallet — адрес или isrc:<ISRC>);\n` +
+              `4) предложи готовый массив splits для register_track и предупреди о типых ошибках (сумма ≠ 100, доля исходника без его согласия, пропущенный автор текста).`
           }
         }]
       };

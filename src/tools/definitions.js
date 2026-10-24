@@ -139,11 +139,12 @@ export const TOOLS = [
   },
   {
     name: "get_track_manifest",
-    description: "Fetch a track's NDT manifest (rights, splits, sonic-dna) from the Stage 0 registry",
+    description: "Fetch a track's NDT manifest (rights, splits, sonic-dna) from the Stage 0 registry. Compact summary by default; verbose=true returns the full manifest JSON",
     inputSchema: {
       type: "object",
       properties: {
-        isrc: { type: "string", description: "Track ISRC" }
+        isrc: { type: "string", description: "Track ISRC" },
+        verbose: { type: "boolean", description: "Full manifest JSON instead of compact summary (default false)" }
       },
       required: ["isrc"]
     }
@@ -169,6 +170,17 @@ export const TOOLS = [
         agent_token: { type: "string", description: "Agent JWT from scopes/issue" }
       },
       required: ["agent_token"]
+    }
+  },
+  {
+    name: "listener_tier",
+    description: "SPEC §7.30 listener status tier (Guest/Junior/Pro/Gold/VIP/Master) grown from real receipts. With the passport owner's token — full breakdown (XP, progress to the next tier, achievements, v2 perks: daily quota and topup bonuses); by ndp_id — public tier only (respects the listener's audience opt-in, §7.7)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ndp_id: { type: "string", description: "NDP passport UUID — public tier (shown only if the listener opted in)" },
+        authorization: { type: "string", description: "Passport owner's Bearer token — full tier breakdown via /subjects/me/tier" }
+      }
     }
   },
   {
@@ -249,5 +261,29 @@ export const TOOLS = [
     name: "snapshot_epoch",
     description: "SPEC §1: current epoch snapshot of subject statuses (signed with SNAPSHOT_SIGNING_KEY)",
     inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "get_epoch_anchor",
+    description: "A7 (SPEC §7.27): anchor status of a registry epoch in the consortium ledger (Hyperledger Fabric) — tracks Merkle root, subject root, fabric tx_id, network/channel and the previous epoch link. Latest epoch if no epoch is given",
+    inputSchema: {
+      type: "object",
+      properties: {
+        epoch: { type: "number", description: "Epoch number (default: latest)" },
+        verbose: { type: "boolean", description: "Full JSON instead of compact summary (default false)" }
+      }
+    }
+  },
+  {
+    name: "verify_track_proof",
+    description: "A7 (SPEC §7.27): end-to-end cryptographic proof that a track is part of an epoch — fetches the Merkle proof from the registry, verifies leaf→root offline (SHA-256 mirror of the chaincode VerifyInclusion) and reports the Fabric anchor (tx_id). One call answers: deposited and cryptographically anchored in HLF, or not yet",
+    inputSchema: {
+      type: "object",
+      properties: {
+        isrc: { type: "string", description: "Track ISRC" },
+        epoch: { type: "number", description: "Epoch number (default: latest)" },
+        verbose: { type: "boolean", description: "Full JSON with the proof path (default false)" }
+      },
+      required: ["isrc"]
+    }
   }
 ];

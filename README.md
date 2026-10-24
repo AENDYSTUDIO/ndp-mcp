@@ -1,7 +1,7 @@
 # NDP MCP Server
 
 **NormalDance Protocol (NDP)** — open music rights & royalties protocol. This MCP server
-gives AI agents 21 tools to verify artists, identify tracks by perceptual fingerprint
+gives AI agents 24 tools (incl. the A7 §7.27 anchor circuit: get_epoch_anchor, verify_track_proof with offline-verified Merkle inclusion proofs) to verify artists, identify tracks by perceptual fingerprint
 (ADNA), read rights manifests (NDT), register works and audit the registry.
 
 Audio file becomes a self-contained rights object: the manifest travels inside the file,
